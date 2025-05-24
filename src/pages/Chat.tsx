@@ -25,22 +25,20 @@ const Chat = () => {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  
+  // Add a ref for messages container to scroll it
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const servers = {
     iceServers: [
       { urls: "stun:stun.l.google.com:19302" },
-      // Add your TURN servers here if needed for NAT traversal
     ],
   };
 
-  // Initialize socket listeners and fetch data
   useEffect(() => {
     if (!currentUser?.id || !partnerId) return;
 
-    socket.emit("join_chat_room", {
-      user1Id: currentUser.id,
-      user2Id: partnerId,
-    });
+    socket.emit("join_chat_room", { user1Id: currentUser.id, user2Id: partnerId });
 
     const fetchMessages = async () => {
       try {
@@ -65,11 +63,8 @@ const Chat = () => {
     fetchMessages();
     fetchPartner();
 
-    // Chat message listener
     const handleReceiveMessage = (msg: any) => setMessages((prev) => [...prev, msg]);
-    socket.on("receive_message", handleReceiveMessage);
 
-    // WebRTC listeners
     const handleReceiveCall = ({ offer, caller, isVideo }: IncomingCall) => {
       setCallStatus("incoming");
       setIncomingCall({ offer, caller, isVideo });
@@ -77,13 +72,11 @@ const Chat = () => {
 
     const handleCallAnswered = async ({ answer }: { answer: RTCSessionDescriptionInit }) => {
       try {
-        if (!peerConnectionRef.current) {
-          throw new Error("Peer connection not established");
-        }
+        if (!peerConnectionRef.current) return;
         await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
         setCallStatus("ongoing");
       } catch (err) {
-        console.error("Error setting remote description:", err);
+        console.error("Remote description error:", err);
         endCall();
       }
     };
@@ -94,21 +87,19 @@ const Chat = () => {
           await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
         }
       } catch (err) {
-        console.error("Error adding ICE candidate:", err);
+        console.error("ICE error:", err);
       }
     };
 
-    const handleCallEnded = () => {
-      endCall();
-    };
+    const handleCallEnded = () => endCall();
 
+    socket.on("receive_message", handleReceiveMessage);
     socket.on("receive_call", handleReceiveCall);
     socket.on("call_answered", handleCallAnswered);
     socket.on("ice_candidate", handleIceCandidate);
     socket.on("call_ended", handleCallEnded);
 
     return () => {
-      // Cleanup
       socket.off("receive_message", handleReceiveMessage);
       socket.off("receive_call", handleReceiveCall);
       socket.off("call_answered", handleCallAnswered);
@@ -117,6 +108,13 @@ const Chat = () => {
       endCall();
     };
   }, [currentUser?.id, partnerId]);
+
+  // Auto scroll effect: scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
 
   const sendMessage = () => {
     if (!input.trim() || !partnerId) return;
@@ -131,29 +129,18 @@ const Chat = () => {
     setInput("");
   };
 
-  const startCall = async (isVideo: boolean = true) => {
-    if (!partnerId) return;
-
+  const startCall = async (isVideo: boolean) => {
     try {
       setCallStatus("calling");
-      
-      // Get user media
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: isVideo,
-      });
-      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-      // Create peer connection
       const pc = new RTCPeerConnection(servers);
       peerConnectionRef.current = pc;
 
-      // Add tracks to connection
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      // ICE candidate handler
       pc.onicecandidate = (e) => {
         if (e.candidate) {
           socket.emit("ice_candidate", {
@@ -163,21 +150,14 @@ const Chat = () => {
         }
       };
 
-      // Remote stream handler
       pc.ontrack = (e) => {
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = e.streams[0];
-        }
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0];
       };
 
-      // Connection state change handler
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
-          endCall();
-        }
+        if (pc.connectionState === "disconnected" || pc.connectionState === "failed") endCall();
       };
 
-      // Create and send offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
@@ -187,37 +167,25 @@ const Chat = () => {
         caller: currentUser,
         isVideo,
       });
-
     } catch (err) {
-      console.error("Error starting call:", err);
+      console.error("Start call error:", err);
+      alert("Could not start the call. Check mic/cam permissions.");
       endCall();
-      alert("Failed to start call. Please check your microphone and camera permissions.");
     }
   };
 
   const acceptCall = async () => {
     if (!incomingCall) return;
-
     try {
-      setCallStatus("ongoing");
-      
-      // Get user media with the same constraints as the caller
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: incomingCall.isVideo,
-      });
-      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: incomingCall.isVideo });
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-      // Create peer connection
       const pc = new RTCPeerConnection(servers);
       peerConnectionRef.current = pc;
 
-      // Add tracks to connection
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-      // ICE candidate handler
       pc.onicecandidate = (e) => {
         if (e.candidate) {
           socket.emit("ice_candidate", {
@@ -227,21 +195,14 @@ const Chat = () => {
         }
       };
 
-      // Remote stream handler
       pc.ontrack = (e) => {
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = e.streams[0];
-        }
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0];
       };
 
-      // Connection state change handler
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
-          endCall();
-        }
+        if (pc.connectionState === "disconnected" || pc.connectionState === "failed") endCall();
       };
 
-      // Set remote description and create answer
       await pc.setRemoteDescription(new RTCSessionDescription(incomingCall.offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -251,19 +212,20 @@ const Chat = () => {
         answer,
       });
 
+      setCallStatus("ongoing");
       setIncomingCall(null);
     } catch (err) {
-      console.error("Error accepting call:", err);
+      console.error("Accept call error:", err);
       endCall();
     }
   };
 
   const rejectCall = () => {
-    if (!incomingCall) return;
-    
-    socket.emit("reject_call", { callerId: incomingCall.caller.id });
-    setIncomingCall(null);
-    setCallStatus("idle");
+    if (incomingCall) {
+      socket.emit("reject_call", { callerId: incomingCall.caller.id });
+      setIncomingCall(null);
+      setCallStatus("idle");
+    }
   };
 
   const endCall = () => {
@@ -271,33 +233,28 @@ const Chat = () => {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
-    
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current.getTracks().forEach(track => track.stop());
       localStreamRef.current = null;
     }
-    
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-    
-    setCallStatus("idle");
-    setIncomingCall(null);
-    
-    // Notify the other peer if we're the one ending the call
+
     if ((callStatus === "ongoing" || callStatus === "calling") && partnerId) {
       socket.emit("end_call", { partnerId });
     }
+
+    setCallStatus("idle");
+    setIncomingCall(null);
   };
 
   const toggleMedia = (type: "audio" | "video") => {
     if (!localStreamRef.current) return;
-    
     const newState = !localStreamEnabled[type];
     setLocalStreamEnabled(prev => ({ ...prev, [type]: newState }));
-    
     localStreamRef.current.getTracks()
       .filter(track => track.kind === type)
-      .forEach(track => track.enabled = newState);
+      .forEach(track => (track.enabled = newState));
   };
 
   return (
@@ -309,122 +266,61 @@ const Chat = () => {
         </div>
         <h2 className="text-lg font-semibold">{user?.firstName}</h2>
         <div className="ml-auto flex gap-2">
-          <button 
-            onClick={() => startCall(true)} 
-            className="bg-white text-green-600 px-4 py-1 rounded flex items-center gap-1"
-            disabled={callStatus !== "idle"}
-          >
-            <span>Video Call</span>
-          </button>
-          <button 
-            onClick={() => startCall(false)} 
-            className="bg-white text-green-600 px-4 py-1 rounded flex items-center gap-1"
-            disabled={callStatus !== "idle"}
-          >
-            <span>Audio Call</span>
-          </button>
+          <button onClick={() => startCall(true)} className="bg-white text-green-600 px-4 py-1 rounded" disabled={callStatus !== "idle"}>Video Call</button>
+          <button onClick={() => startCall(false)} className="bg-white text-green-600 px-4 py-1 rounded" disabled={callStatus !== "idle"}>Audio Call</button>
         </div>
       </div>
 
-      {/* Chat messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2">
+      {/* Messages */}
+      <div
+        className="flex-1 overflow-y-auto px-4 py-2 space-y-2"
+        style={{ scrollBehavior: "smooth" }}
+      >
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.senderId === currentUser.id ? "justify-end" : "justify-start"}`}>
-            <div className={`rounded-lg px-4 py-2 max-w-xs text-sm ${
-              msg.senderId === currentUser.id ? "bg-green-500 text-white" : "bg-white text-gray-900 shadow"
-            }`}>
+            <div className={`rounded-lg px-4 py-2 max-w-xs text-sm ${msg.senderId === currentUser.id ? "bg-green-500 text-white" : "bg-white text-gray-900 shadow"}`}>
               {msg.content}
             </div>
           </div>
         ))}
+        {/* Dummy div to scroll into view */}
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* Message input */}
+      {/* Input */}
       <div className="px-4 py-2 bg-white flex items-center gap-2 border-t">
-        <input
-          type="text"
-          placeholder="Type a message..."
-          className="flex-1 border rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-green-400"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-        />
-        <button
-          className="bg-green-500 text-white px-4 py-2 rounded-full font-medium"
-          onClick={sendMessage}
-        >
-          Send
-        </button>
+        <input type="text" className="flex-1 px-3 py-2 border rounded" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMessage()} placeholder="Type a message" />
+        <button onClick={sendMessage} className="bg-green-600 text-white px-4 py-2 rounded">Send</button>
       </div>
 
       {/* Incoming call modal */}
       {callStatus === "incoming" && incomingCall && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex flex-col items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 shadow-md text-center">
-            <h2 className="text-lg font-bold mb-4">
-              Incoming {incomingCall.isVideo ? "video" : "audio"} call from {incomingCall.caller.firstName}
-            </h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full text-center">
+            <h3 className="text-lg font-semibold mb-4">{incomingCall.caller.firstName} is calling you {incomingCall.isVideo ? "with video" : "with audio"}</h3>
             <div className="flex justify-center gap-4">
-              <button
-                onClick={acceptCall}
-                className="bg-green-500 text-white px-4 py-2 rounded"
-              >
-                Accept
-              </button>
-              <button
-                onClick={rejectCall}
-                className="bg-red-500 text-white px-4 py-2 rounded"
-              >
-                Reject
-              </button>
+              <button onClick={acceptCall} className="bg-green-600 text-white px-4 py-2 rounded">Accept</button>
+              <button onClick={rejectCall} className="bg-red-600 text-white px-4 py-2 rounded">Reject</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Ongoing call controls */}
+      {/* Call ongoing UI */}
       {(callStatus === "ongoing" || callStatus === "calling") && (
-        <div className="fixed bottom-4 right-4 bg-black p-2 rounded-lg z-50 flex gap-2">
-          {localStreamRef.current?.getVideoTracks().length ? (
-            <video 
-              ref={localVideoRef} 
-              autoPlay 
-              muted 
-              className="w-32 h-32 rounded"
-            />
-          ) : (
-            <div className="w-32 h-32 bg-gray-700 rounded flex items-center justify-center text-white">
-              Audio only
-            </div>
-          )}
-          
-          <video 
-            ref={remoteVideoRef} 
-            autoPlay 
-            className="w-32 h-32 rounded bg-black"
-          />
-          
-          <div className="flex flex-col gap-1 justify-end">
-            <button
-              onClick={() => toggleMedia("audio")}
-              className={`p-1 rounded ${localStreamEnabled.audio ? "bg-green-500" : "bg-red-500"} text-white`}
-            >
-              {localStreamEnabled.audio ? "Mute" : "Unmute"}
+        <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg p-4 flex flex-col gap-2 z-40">
+          <div className="flex gap-2">
+            <video ref={localVideoRef} autoPlay muted playsInline className="w-24 h-24 bg-black rounded" />
+            <video ref={remoteVideoRef} autoPlay playsInline className="w-48 h-48 bg-black rounded" />
+          </div>
+          <div className="flex gap-2 justify-center">
+            <button onClick={() => toggleMedia("audio")} className={`px-3 py-1 rounded ${localStreamEnabled.audio ? "bg-green-600 text-white" : "bg-gray-300"}`}>
+              {localStreamEnabled.audio ? "Mute Mic" : "Unmute Mic"}
             </button>
-            {localStreamRef.current?.getVideoTracks().length && (
-              <button
-                onClick={() => toggleMedia("video")}
-                className={`p-1 rounded ${localStreamEnabled.video ? "bg-green-500" : "bg-red-500"} text-white`}
-              >
-                {localStreamEnabled.video ? "Video Off" : "Video On"}
-              </button>
-            )}
-            <button
-              onClick={endCall}
-              className="bg-red-500 text-white p-1 rounded"
-            >
-              End
+            <button onClick={() => toggleMedia("video")} className={`px-3 py-1 rounded ${localStreamEnabled.video ? "bg-green-600 text-white" : "bg-gray-300"}`}>
+              {localStreamEnabled.video ? "Stop Video" : "Start Video"}
             </button>
+            <button onClick={endCall} className="px-3 py-1 rounded bg-red-600 text-white">End Call</button>
           </div>
         </div>
       )}
