@@ -814,9 +814,9 @@ const Chat = () => {
                 {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 {msg.senderId === currentUser.id && (
                   msg.isSeen ? (
-                    <FiCheckCircle size={14} className="text-blue-500" title="Seen" /> // Double checkmark for seen
+                    <FiCheckCircle size={14} title="Seen" /> // Double checkmark for seen
                   ) : (
-                    <FiCheck size={14} className="text-gray-400" title="Delivered" /> // Single checkmark for delivered
+                    <FiCheck size={14}  title="Delivered" /> // Single checkmark for delivered
                   )
                 )}
               </div>
@@ -860,7 +860,7 @@ const Chat = () => {
 
         {isRecording ? (
           <div className="flex-1 px-4 py-2 text-center text-red-600 animate-pulse bg-white rounded-full border border-gray-300 flex items-center justify-center">
-            <FiMic size={20} className="mr-2" /> Recording... {formatTime(recordingDuration)}
+            <FiMic size={20} /> Recording... {formatTime(recordingDuration)}
           </div>
         ) : (
           <input

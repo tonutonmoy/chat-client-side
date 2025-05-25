@@ -27,7 +27,7 @@ const Sidebar = () => {
       {/* 🔼 Search Bar */}
       <div className="p-2 bg-white">
         <div className="bg-[#f0f2f5] rounded-lg flex items-center px-3 py-1">
-          <FiSearch size={18} className="text-gray-500 mr-2" />
+          <FiSearch size={18}  />
           <input
             type="text"
             placeholder="Search or start new chat"
